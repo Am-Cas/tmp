@@ -2,64 +2,77 @@ package ogp;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import ogp.balls.Ball;
-import ogp.balls.BallBehavior;
 import ogp.balls.BlinkingBallBehavior;
-import ogp.balls.BlinkingBallBrick;
 import ogp.balls.StandardBehavior;
 import ogp.balls.StrongBallBehavior;
-import ogp.balls.TemporaryBehavior;
-import ogp.bricks.*;
-import ogp.math.*;
+import ogp.bricks.BlinkingBallBrick;
+import ogp.bricks.InvertPaddleBrick;
+import ogp.bricks.ShrinkPaddleBrick;
+import ogp.bricks.SpawnBallBrick;
+import ogp.bricks.SpeedUpBrick;
+import ogp.bricks.SpikeyBrick;
+import ogp.bricks.StandardBrick;
+import ogp.bricks.StrengtheningBrick;
+import ogp.math.Circle;
+import ogp.math.Interval;
+import ogp.math.Point;
+import ogp.math.Rectangle;
+import ogp.math.Vector;
 import ogp.paddles.Paddle;
 import ogp.paddles.PaddleMotionDirection;
 
 /**
- * Unit tests for the Breakout project (Iteration 2).
+ * Unit tests for the Breakout project, Iteration 2.
  *
  * Tests are divided into:
- *   - Regression tests: expose a specific flaw in the original code.
- *     Each regression test is named regrXxx and fails on the original code, passes after the fix.
- *   - Normal unit tests: verify correct behaviour specified in the assignment.
+ *   - Regression tests (regrXxx): fail on the original flawed code, pass after fixing.
+ *   - Normal unit tests: verify correct behaviour as specified in the assignment.
+ *
+ * Naming convention: one scenario per test method.
  */
 public class BreakoutTest
 {
     // -----------------------------------------------------------------------
-    // Shared helpers / factory methods
+    // Shared factory helpers
     // -----------------------------------------------------------------------
 
-    /** Returns a minimal BrickGrid (1 column, 1 row, 100×100 bricks). */
-    private BrickGrid smallGrid()
+    private BrickGrid emptyGrid()
     {
         return new BrickGrid(7, 8, 100, 30);
     }
 
-    /** Returns a standard BreakoutState backed by the default map. */
+    /** State with no balls added, backed by the default map. */
     private BreakoutState defaultState()
     {
         return GameMapParser.parseNoBalls(GameMapParser.DEFAULT_MAP, 100, 30);
     }
 
-    /** Returns a ball centred in the middle of the bounding rectangle. */
-    private Ball makeBall(BreakoutState state)
+    /** State built on a fresh empty grid, with no balls. */
+    private BreakoutState freshState()
     {
-        var centre = state.getBoundingRectangle().getCenter();
-        var geometry = new Circle(centre, 5);
-        var velocity = new Vector(1, -1);
-        var behavior = new StandardBehavior();
-        return state.addBall(geometry, velocity, behavior);
+        return new BreakoutState(emptyGrid(), 100, 10, 70);
     }
 
-    // -----------------------------------------------------------------------
-    // REGRESSION TESTS — these must FAIL on the original code, PASS after fix
-    // -----------------------------------------------------------------------
+    /** Adds a standard ball at the centre of the bounding rectangle. */
+    private Ball addCentreBall(BreakoutState state)
+    {
+        var centre = state.getBoundingRectangle().getCenter();
+        return state.addBall(new Circle(centre, 5), new Vector(1, -1), new StandardBehavior());
+    }
+
+    // =======================================================================
+    // REGRESSION TESTS
+    // Each test name starts with "regr" and targets one specific original flaw.
+    // =======================================================================
+
+    // --- Collision ---
 
     /** REGRESSION: Collision constructor stored 0 instead of the given time. */
     @Test
-    public void regrCollisionStoresCorrectTime()
+    public void regrCollisionConstructorStoresTime()
     {
         var col = new Collision(42L, Vector.KILO_DOWN);
         assertEquals(42L, col.getMillisecondsUntilCollision());
@@ -67,35 +80,37 @@ public class BreakoutTest
 
     /** REGRESSION: Collision constructor stored null instead of the given kiloNormal. */
     @Test
-    public void regrCollisionStoresCorrectKiloNormal()
+    public void regrCollisionConstructorStoresKiloNormal()
     {
         var col = new Collision(0L, Vector.KILO_UP);
         assertEquals(Vector.KILO_UP, col.getKiloNormal());
     }
 
-    /** REGRESSION: BrickCollision.getBrick() returned null instead of the stored brick. */
+    // --- BrickCollision ---
+
+    /** REGRESSION: BrickCollision stored null in brick field; getBrick() returned null. */
     @Test
     public void regrBrickCollisionGetBrickNotNull()
     {
-        var grid = smallGrid();
-        var pos = new Point(0, 0);
-        var brick = grid.addStandardBrick(pos);
+        var grid = emptyGrid();
+        var brick = grid.addStandardBrick(new Point(0, 0));
         var col = new BrickCollision(0L, Vector.KILO_DOWN, brick);
         assertNotNull(col.getBrick());
     }
 
-    /** REGRESSION: BrickCollision stored null in brick field instead of the parameter. */
+    /** REGRESSION: BrickCollision stored null; getBrick() did not return the correct brick. */
     @Test
-    public void regrBrickCollisionGetBrickIsCorrectBrick()
+    public void regrBrickCollisionGetBrickIsCorrectObject()
     {
-        var grid = smallGrid();
-        var pos = new Point(0, 0);
-        var brick = grid.addStandardBrick(pos);
+        var grid = emptyGrid();
+        var brick = grid.addStandardBrick(new Point(1, 1));
         var col = new BrickCollision(10L, Vector.KILO_LEFT, brick);
         assertSame(brick, col.getBrick());
     }
 
-    /** REGRESSION: BrickGrid constructor set brickWidth to 0 instead of the parameter. */
+    // --- BrickGrid ---
+
+    /** REGRESSION: BrickGrid constructor set brickWidth to 0. */
     @Test
     public void regrBrickGridBrickWidthStoredCorrectly()
     {
@@ -103,7 +118,7 @@ public class BreakoutTest
         assertEquals(50, grid.getBrickWidth());
     }
 
-    /** REGRESSION: BrickGrid constructor set brickHeight to 0 instead of the parameter. */
+    /** REGRESSION: BrickGrid constructor set brickHeight to 0. */
     @Test
     public void regrBrickGridBrickHeightStoredCorrectly()
     {
@@ -111,13 +126,19 @@ public class BreakoutTest
         assertEquals(20, grid.getBrickHeight());
     }
 
-    /** REGRESSION: BrickGrid constructor left grid null, causing NPE on any use. */
+    /** REGRESSION: BrickGrid constructor set grid to null, causing NPE on column-count access. */
     @Test
-    public void regrBrickGridGridIsNotNull()
+    public void regrBrickGridColumnCountAccessibleAfterConstruction()
     {
         var grid = new BrickGrid(3, 4, 50, 20);
-        // getColumnCount() and getRowCount() delegate to grid, would NPE if null
         assertEquals(3, grid.getColumnCount());
+    }
+
+    /** REGRESSION: BrickGrid constructor set grid to null, causing NPE on row-count access. */
+    @Test
+    public void regrBrickGridRowCountAccessibleAfterConstruction()
+    {
+        var grid = new BrickGrid(3, 4, 50, 20);
         assertEquals(4, grid.getRowCount());
     }
 
@@ -139,175 +160,184 @@ public class BreakoutTest
         assertSame(brick, grid.getBrickAt(pos));
     }
 
-    /** REGRESSION: Ball constructor stored null in all fields. getGeometry() returned null. */
+    /** REGRESSION: BrickGrid.addSpawnBallBrick() returned null instead of the new brick. */
+    @Test
+    public void regrBrickGridAddSpawnBallBrickNotNull()
+    {
+        var grid = new BrickGrid(5, 5, 100, 30);
+        assertNotNull(grid.addSpawnBallBrick(new Point(0, 0)));
+    }
+
+    /** REGRESSION: BrickGrid.addSpawnBallBrick() did not store the brick in the grid. */
+    @Test
+    public void regrBrickGridAddSpawnBallBrickStoredInGrid()
+    {
+        var grid = new BrickGrid(5, 5, 100, 30);
+        var pos = new Point(0, 0);
+        var brick = grid.addSpawnBallBrick(pos);
+        assertSame(brick, grid.getBrickAt(pos));
+    }
+
+    // --- Ball ---
+
+    /** REGRESSION: Ball constructor stored null in all fields; getGeometry() returned null. */
     @Test
     public void regrBallGetGeometryNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.getGeometry());
+        assertNotNull(addCentreBall(defaultState()).getGeometry());
     }
 
-    /** REGRESSION: Ball constructor stored null. getVelocity() returned null. */
+    /** REGRESSION: Ball constructor stored null; getVelocity() returned null. */
     @Test
     public void regrBallGetVelocityNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.getVelocity());
+        assertNotNull(addCentreBall(defaultState()).getVelocity());
     }
 
-    /** REGRESSION: Ball constructor stored null. getBehavior() returned null. */
+    /** REGRESSION: Ball constructor stored null; getBehavior() returned null. */
     @Test
     public void regrBallGetBehaviorNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.getBehavior());
+        assertNotNull(addCentreBall(defaultState()).getBehavior());
     }
 
-    /** REGRESSION: Ball constructor stored null. getAllowedArea() returned null. */
+    /** REGRESSION: Ball constructor stored null; getAllowedArea() returned null. */
     @Test
     public void regrBallGetAllowedAreaNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.getAllowedArea());
+        assertNotNull(addCentreBall(defaultState()).getAllowedArea());
     }
 
-    /** REGRESSION: Ball.getCenter() returned null (delegated to null geometry). */
+    /** REGRESSION: Ball.getCenter() delegated to null geometry and returned null. */
     @Test
     public void regrBallGetCenterNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.getCenter());
+        assertNotNull(addCentreBall(defaultState()).getCenter());
     }
 
-    /** REGRESSION: Ball.move() did nothing, geometry was unchanged. */
+    /** REGRESSION: Ball.move() did nothing; x-position unchanged. */
     @Test
-    public void regrBallMoveChangesGeometry()
+    public void regrBallMoveChangesPositionX()
     {
-        var state = defaultState();
+        var state = freshState();
         var centre = state.getBoundingRectangle().getCenter();
-        var geometry = new Circle(centre, 5);
-        var velocity = new Vector(3, 0);
-        var ball = state.addBall(geometry, velocity, new StandardBehavior());
-
-        var before = ball.getGeometry().getCenter();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(3, 0), new StandardBehavior());
+        long xBefore = ball.getCenter().x();
         ball.move(10);
-        var after = ball.getGeometry().getCenter();
+        assertEquals(xBefore + 30, ball.getCenter().x());
+    }
 
-        // x should have increased by 3*10 = 30
-        assertEquals(before.x() + 30, after.x());
-        assertEquals(before.y(), after.y());
+    /** REGRESSION: Ball.move() did nothing; y-position unchanged. */
+    @Test
+    public void regrBallMoveChangesPositionY()
+    {
+        var state = freshState();
+        var centre = state.getBoundingRectangle().getCenter();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(0, -4), new StandardBehavior());
+        long yBefore = ball.getCenter().y();
+        ball.move(5);
+        assertEquals(yBefore - 20, ball.getCenter().y());
     }
 
     /** REGRESSION: Ball.computeDestination() returned null. */
     @Test
     public void regrBallComputeDestinationNotNull()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        assertNotNull(ball.computeDestination(5));
+        assertNotNull(addCentreBall(freshState()).computeDestination(5));
     }
 
-    /** REGRESSION: Ball.setVelocity() did nothing. */
+    /** REGRESSION: Ball.computeDestination() returned wrong coordinates. */
     @Test
-    public void regrBallSetVelocityWorks()
+    public void regrBallComputeDestinationCorrect()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
+        var state = freshState();
+        var centre = state.getBoundingRectangle().getCenter();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(2, -3), new StandardBehavior());
+        var dest = ball.computeDestination(10);
+        assertEquals(centre.x() + 20, dest.getCenter().x());
+        assertEquals(centre.y() - 30, dest.getCenter().y());
+    }
+
+    /** REGRESSION: Ball.setVelocity() did nothing; velocity was unchanged. */
+    @Test
+    public void regrBallSetVelocityActuallyUpdatesVelocity()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
         var newVel = new Vector(7, -3);
         ball.setVelocity(newVel);
         assertEquals(newVel, ball.getVelocity());
     }
 
-    /** REGRESSION: TemporaryBehavior set timeLeft = duration*0 = 0. Should be duration. */
+    // --- TemporaryBehavior ---
+
+    /** REGRESSION: TemporaryBehavior stored timeLeft = duration * 0 = 0; should be DURATION. */
     @Test
-    public void regrTemporaryBehaviorTimeLeftIsInitializedToDuration()
+    public void regrStrongBallBehaviorTimeLeftInitialisedToDuration()
     {
-        var b = new StrongBallBehavior();
-        assertEquals(StrongBallBehavior.DURATION, b.getTimeLeft());
+        assertEquals(StrongBallBehavior.DURATION, new StrongBallBehavior().getTimeLeft());
     }
 
-    /** REGRESSION: TemporaryBehavior(BlinkingBall variant) timeLeft should be DURATION. */
+    /** REGRESSION: Same issue for BlinkingBallBehavior. */
     @Test
-    public void regrBlinkingBehaviorTimeLeftIsInitializedToDuration()
+    public void regrBlinkingBallBehaviorTimeLeftInitialisedToDuration()
     {
-        var b = new BlinkingBallBehavior();
-        assertEquals(BlinkingBallBehavior.DURATION, b.getTimeLeft());
+        assertEquals(BlinkingBallBehavior.DURATION, new BlinkingBallBehavior().getTimeLeft());
     }
+
+    // --- Brick.getGridPosition ---
 
     /** REGRESSION: Brick.getGridPosition() returned null instead of the stored position. */
     @Test
     public void regrBrickGetGridPositionNotNull()
     {
-        var grid = new BrickGrid(5, 5, 100, 30);
-        var pos = new Point(1, 2);
-        var brick = grid.addStandardBrick(pos);
-        assertNotNull(brick.getGridPosition());
+        assertNotNull(emptyGrid().addStandardBrick(new Point(1, 2)).getGridPosition());
     }
 
-    /** REGRESSION: Brick.getGridPosition() returned wrong value. */
+    /** REGRESSION: Brick.getGridPosition() returned null so could not equal expected position. */
     @Test
-    public void regrBrickGetGridPositionIsCorrect()
+    public void regrBrickGetGridPositionEqualsConstructorArgument()
     {
-        var grid = new BrickGrid(5, 5, 100, 30);
         var pos = new Point(3, 1);
-        var brick = grid.addStandardBrick(pos);
-        assertEquals(pos, brick.getGridPosition());
+        assertEquals(pos, emptyGrid().addStandardBrick(pos).getGridPosition());
     }
 
-    /**
-     * REGRESSION: Paddle constructor threw for speed==10 (arbitrary valid speed).
-     * The correct check is speed <= 0.
-     */
+    // --- Paddle speed guard ---
+
+    /** REGRESSION: Paddle constructor threw for speed == 10 (a perfectly valid speed). */
     @Test
-    public void regrPaddleAcceptsSpeedOf10()
+    public void regrPaddleAcceptsSpeedOfTen()
     {
-        var allowed = new Interval(0, 1000);
-        var topCenter = new Point(500, 0);
-        // should not throw
-        assertDoesNotThrow(() -> new Paddle(allowed, topCenter, 100, 10));
+        assertDoesNotThrow(
+                () -> new Paddle(new Interval(0, 1000), new Point(500, 0), 100, 10));
     }
 
-    /** REGRESSION: Paddle constructor should reject speed <= 0. */
+    /** REGRESSION: With the wrong guard, speed == 0 was accepted instead of rejected. */
     @Test
     public void regrPaddleRejectsZeroSpeed()
     {
-        var allowed = new Interval(0, 1000);
-        var topCenter = new Point(500, 0);
-        assertThrows(IllegalArgumentException.class, () -> new Paddle(allowed, topCenter, 100, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Paddle(new Interval(0, 1000), new Point(500, 0), 100, 0));
     }
 
-    /** REGRESSION: Paddle constructor should reject negative speed. */
+    /** REGRESSION: With the wrong guard, negative speed was also accepted. */
     @Test
     public void regrPaddleRejectsNegativeSpeed()
     {
-        var allowed = new Interval(0, 1000);
-        var topCenter = new Point(500, 0);
-        assertThrows(IllegalArgumentException.class, () -> new Paddle(allowed, topCenter, 100, -5));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Paddle(new Interval(0, 1000), new Point(500, 0), 100, -1));
     }
 
-    // -----------------------------------------------------------------------
+    // =======================================================================
     // NORMAL UNIT TESTS
-    // -----------------------------------------------------------------------
+    // =======================================================================
 
     // --- Collision ---
 
     @Test
-    public void collisionGetMillisecondsRoundTrip()
+    public void collisionZeroTimeIsAllowed()
     {
-        var col = new Collision(99L, Vector.KILO_RIGHT);
-        assertEquals(99L, col.getMillisecondsUntilCollision());
-    }
-
-    @Test
-    public void collisionGetKiloNormalRoundTrip()
-    {
-        var col = new Collision(0L, Vector.KILO_LEFT);
-        assertEquals(Vector.KILO_LEFT, col.getKiloNormal());
+        assertEquals(0L, new Collision(0L, Vector.KILO_RIGHT).getMillisecondsUntilCollision());
     }
 
     @Test
@@ -343,7 +373,7 @@ public class BreakoutTest
     }
 
     @Test
-    public void getEarliestCollisionPicksSmaller()
+    public void getEarliestCollisionPicksLowerTime()
     {
         var c1 = new Collision(3L, Vector.KILO_DOWN);
         var c2 = new Collision(7L, Vector.KILO_UP);
@@ -375,6 +405,13 @@ public class BreakoutTest
                 () -> new BrickCollision(0L, Vector.KILO_DOWN, null));
     }
 
+    @Test
+    public void brickCollisionStoresTime()
+    {
+        var brick = emptyGrid().addStandardBrick(new Point(0, 0));
+        assertEquals(77L, new BrickCollision(77L, Vector.KILO_DOWN, brick).getMillisecondsUntilCollision());
+    }
+
     // --- BrickGrid ---
 
     @Test
@@ -390,26 +427,61 @@ public class BreakoutTest
     }
 
     @Test
-    public void brickGridGetWidthCorrect()
+    public void brickGridThrowsOnZeroBrickWidth()
+    {
+        assertThrows(IllegalArgumentException.class, () -> new BrickGrid(4, 4, 0, 30));
+    }
+
+    @Test
+    public void brickGridThrowsOnZeroBrickHeight()
+    {
+        assertThrows(IllegalArgumentException.class, () -> new BrickGrid(4, 4, 100, 0));
+    }
+
+    @Test
+    public void brickGridGetWidthIsColumnCountTimesBrickWidth()
     {
         var grid = new BrickGrid(5, 3, 80, 25);
         assertEquals(5 * 80, grid.getWidth());
     }
 
     @Test
-    public void brickGridAddStandardBrickStoredCorrectly()
+    public void brickGridGetHeightIsRowCountTimesBrickHeight()
     {
-        var grid = new BrickGrid(4, 4, 100, 30);
-        var pos = new Point(1, 1);
-        assertFalse(grid.containsBrickAt(pos));
-        grid.addStandardBrick(pos);
-        assertTrue(grid.containsBrickAt(pos));
+        var grid = new BrickGrid(5, 3, 80, 25);
+        assertEquals(3 * 25, grid.getHeight());
     }
 
     @Test
-    public void brickGridRemoveBrickWorks()
+    public void brickGridInitiallyHasNoBricks()
     {
-        var grid = new BrickGrid(4, 4, 100, 30);
+        assertTrue(emptyGrid().isEmpty());
+    }
+
+    @Test
+    public void brickGridIsNotEmptyAfterAddingBrick()
+    {
+        var grid = emptyGrid();
+        grid.addStandardBrick(new Point(0, 0));
+        assertFalse(grid.isEmpty());
+    }
+
+    @Test
+    public void brickGridGetBrickAtReturnsNullForEmptyCell()
+    {
+        assertNull(emptyGrid().getBrickAt(new Point(0, 0)));
+    }
+
+    @Test
+    public void brickGridContainsBrickAtReturnsFalseOutsideBounds()
+    {
+        assertFalse(emptyGrid().containsBrickAt(new Point(99, 99)));
+    }
+
+    @Test
+    public void brickGridRemoveBrickMakesCellEmpty()
+    {
+        var grid = emptyGrid();
         var pos = new Point(0, 0);
         var brick = grid.addStandardBrick(pos);
         grid.removeBrick(brick);
@@ -417,51 +489,30 @@ public class BreakoutTest
     }
 
     @Test
-    public void brickGridGetBricksReturnsAllBricks()
+    public void brickGridGetBricksReflectsAllAddedBricks()
     {
-        var grid = new BrickGrid(4, 4, 100, 30);
+        var grid = emptyGrid();
         grid.addStandardBrick(new Point(0, 0));
         grid.addStandardBrick(new Point(1, 1));
         assertEquals(2, grid.getBricks().size());
     }
 
     @Test
-    public void brickGridIsEmptyWhenNoBricks()
+    public void brickGridGetBrickRectangleHasCorrectPosition()
     {
-        var grid = new BrickGrid(3, 3, 100, 30);
-        assertTrue(grid.isEmpty());
+        var grid = new BrickGrid(5, 5, 80, 25);
+        var rect = grid.getBrickRectangle(new Point(2, 3));
+        assertEquals(2 * 80, rect.getLeft());
+        assertEquals(3 * 25, rect.getTop());
     }
 
     @Test
-    public void brickGridIsNotEmptyAfterAddBrick()
+    public void brickGridGetBrickRectangleHasCorrectDimensions()
     {
-        var grid = new BrickGrid(3, 3, 100, 30);
-        grid.addStandardBrick(new Point(0, 0));
-        assertFalse(grid.isEmpty());
-    }
-
-    @Test
-    public void brickGridGetBrickAtNullForEmptyCell()
-    {
-        var grid = new BrickGrid(3, 3, 100, 30);
-        assertNull(grid.getBrickAt(new Point(0, 0)));
-    }
-
-    @Test
-    public void brickGridContainsBrickAtOutOfBoundsReturnsFalse()
-    {
-        var grid = new BrickGrid(3, 3, 100, 30);
-        assertFalse(grid.containsBrickAt(new Point(99, 99)));
-    }
-
-    @Test
-    public void brickGridAddSpawnBallBrickNotNull()
-    {
-        var grid = new BrickGrid(3, 3, 100, 30);
-        var pos = new Point(0, 0);
-        var brick = grid.addSpawnBallBrick(pos);
-        assertNotNull(brick);
-        assertSame(brick, grid.getBrickAt(pos));
+        var grid = new BrickGrid(5, 5, 80, 25);
+        var rect = grid.getBrickRectangle(new Point(0, 0));
+        assertEquals(80, rect.getWidth());
+        assertEquals(25, rect.getHeight());
     }
 
     // --- Ball ---
@@ -476,78 +527,58 @@ public class BreakoutTest
     @Test
     public void ballConstructorThrowsOnNullGeometry()
     {
-        var rect = new Rectangle(0, 0, 500, 500);
         assertThrows(IllegalArgumentException.class,
-                () -> new Ball(rect, null, new Vector(1, 0), new StandardBehavior()));
+                () -> new Ball(new Rectangle(0, 0, 500, 500), null, new Vector(1, 0), new StandardBehavior()));
     }
 
     @Test
     public void ballConstructorThrowsOnNullVelocity()
     {
-        var rect = new Rectangle(0, 0, 500, 500);
         assertThrows(IllegalArgumentException.class,
-                () -> new Ball(rect, new Circle(new Point(100, 100), 5), null, new StandardBehavior()));
+                () -> new Ball(new Rectangle(0, 0, 500, 500),
+                        new Circle(new Point(100, 100), 5), null, new StandardBehavior()));
     }
 
     @Test
     public void ballConstructorThrowsOnNullBehavior()
     {
-        var rect = new Rectangle(0, 0, 500, 500);
         assertThrows(IllegalArgumentException.class,
-                () -> new Ball(rect, new Circle(new Point(100, 100), 5), new Vector(1, 0), null));
+                () -> new Ball(new Rectangle(0, 0, 500, 500),
+                        new Circle(new Point(100, 100), 5), new Vector(1, 0), null));
     }
 
     @Test
-    public void ballMoveCorrectly()
+    public void ballGetCenterMatchesGeometryCenter()
     {
-        var state = defaultState();
-        var centre = state.getBoundingRectangle().getCenter();
-        var geom = new Circle(centre, 5);
-        var vel = new Vector(2, -3);
-        var ball = state.addBall(geom, vel, new StandardBehavior());
-        ball.move(10);
-        assertEquals(centre.x() + 20, ball.getCenter().x());
-        assertEquals(centre.y() - 30, ball.getCenter().y());
+        var state = freshState();
+        var ball = addCentreBall(state);
+        assertEquals(ball.getGeometry().getCenter(), ball.getCenter());
     }
 
     @Test
     public void ballComputeDestinationDoesNotMutateBall()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
+        var ball = addCentreBall(freshState());
         var before = ball.getGeometry();
         ball.computeDestination(100);
         assertEquals(before, ball.getGeometry());
     }
 
     @Test
-    public void ballSetBehaviorWorks()
+    public void ballSetBehaviorReplacesOldBehavior()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
-        var newBehavior = new StrongBallBehavior();
-        ball.setBehavior(newBehavior);
-        assertSame(newBehavior, ball.getBehavior());
-    }
-
-    @Test
-    public void ballSpeedUpIncreasesSpeedWhenBelowMax()
-    {
-        var state = defaultState();
-        var centre = state.getBoundingRectangle().getCenter();
-        var ball = state.addBall(new Circle(centre, 5), new Vector(5, 0), new StandardBehavior());
-        var sqBefore = ball.getVelocity().getSquaredLength();
-        ball.speedUp();
-        var sqAfter = ball.getVelocity().getSquaredLength();
-        assertTrue(sqAfter >= sqBefore);
+        var ball = addCentreBall(freshState());
+        var b = new StrongBallBehavior();
+        ball.setBehavior(b);
+        assertSame(b, ball.getBehavior());
     }
 
     @Test
     public void ballSpeedUpDoesNotExceedMax()
     {
-        var state = defaultState();
+        var state = freshState();
         var centre = state.getBoundingRectangle().getCenter();
-        // Start at max speed; speedUp should not apply
+        // squaredLength of (100,0) = 10000 = MAXIMUM_SPEEDUP_SQUARED_SPEED
         var ball = state.addBall(new Circle(centre, 5), new Vector(100, 0), new StandardBehavior());
         var before = ball.getVelocity();
         ball.speedUp();
@@ -557,9 +588,9 @@ public class BreakoutTest
     @Test
     public void ballSlowDownDoesNotGoBelowMin()
     {
-        var state = defaultState();
+        var state = freshState();
         var centre = state.getBoundingRectangle().getCenter();
-        // Start at min speed; slowDown should not apply
+        // squaredLength of (5,0) = 25 = MINIMUM_SLOWDOWN_SQUARED_SPEED
         var ball = state.addBall(new Circle(centre, 5), new Vector(5, 0), new StandardBehavior());
         var before = ball.getVelocity();
         ball.slowDown();
@@ -579,27 +610,25 @@ public class BreakoutTest
     public void breakoutStateThrowsOnNegativeHp()
     {
         assertThrows(IllegalArgumentException.class,
-                () -> new BreakoutState(smallGrid(), 100, 10, -1));
+                () -> new BreakoutState(emptyGrid(), 100, 10, -1));
     }
 
     @Test
     public void breakoutStateInitialBallsEmpty()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 70);
-        assertTrue(state.getBalls().isEmpty());
+        assertTrue(freshState().getBalls().isEmpty());
     }
 
     @Test
-    public void breakoutStateInitialHpsCorrect()
+    public void breakoutStateInitialHpsMatchesConstructorArgument()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 42);
-        assertEquals(42, state.getHps());
+        assertEquals(42, new BreakoutState(emptyGrid(), 100, 10, 42).getHps());
     }
 
     @Test
-    public void breakoutStateLose1LifeDecrements()
+    public void breakoutStateLose1LifeDecrementsHpsByOne()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 5);
+        var state = new BreakoutState(emptyGrid(), 100, 10, 5);
         state.lose1Life();
         assertEquals(4, state.getHps());
     }
@@ -607,7 +636,7 @@ public class BreakoutTest
     @Test
     public void breakoutStateLose1LifeDoesNotGoBelowZero()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 0);
+        var state = new BreakoutState(emptyGrid(), 100, 10, 0);
         state.lose1Life();
         assertEquals(0, state.getHps());
     }
@@ -615,58 +644,62 @@ public class BreakoutTest
     @Test
     public void breakoutStateIsGameLostWhenNoBalls()
     {
-        var state = defaultState();
-        // no balls added
-        assertTrue(state.isGameLost());
+        assertTrue(freshState().isGameLost());
     }
 
     @Test
     public void breakoutStateIsGameLostWhenHpsZero()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 0);
-        makeBall(state);
+        var state = new BreakoutState(emptyGrid(), 100, 10, 0);
+        addCentreBall(state);
         assertTrue(state.isGameLost());
     }
 
     @Test
-    public void breakoutStateIsNotGameLostWithBallAndHps()
+    public void breakoutStateIsNotGameLostWithBallAndPositiveHps()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 5);
-        makeBall(state);
+        var state = new BreakoutState(emptyGrid(), 100, 10, 5);
+        addCentreBall(state);
         assertFalse(state.isGameLost());
     }
 
     @Test
-    public void breakoutStateIsGameWonWhenNoBricks()
+    public void breakoutStateIsGameWonWhenOnlyIndestructibleBricksRemain()
     {
-        var state = new BreakoutState(smallGrid(), 100, 10, 70);
-        makeBall(state);
-        // grid is empty → all remaining bricks are indestructible (vacuously true)
+        var state = freshState();
+        addCentreBall(state);
+        state.getBrickGrid().addSpikeyBrick(new Point(0, 0));
         assertTrue(state.isGameWon());
     }
 
     @Test
-    public void breakoutStateIsNotGameWonWithDestructibleBricks()
+    public void breakoutStateIsNotGameWonWithDestructibleBrick()
     {
-        var state = defaultState();
-        makeBall(state);
-        // DEFAULT_MAP has standard bricks
+        var state = freshState();
+        addCentreBall(state);
+        state.getBrickGrid().addStandardBrick(new Point(0, 0));
         assertFalse(state.isGameWon());
+    }
+
+    @Test
+    public void breakoutStateIsGameWonWhenNoBricksAtAll()
+    {
+        var state = freshState();
+        addCentreBall(state);
+        assertTrue(state.isGameWon());
     }
 
     @Test
     public void breakoutStateIsGameOverWhenLost()
     {
-        var state = defaultState();
-        // no balls: lost
-        assertTrue(state.isGameOver());
+        assertTrue(freshState().isGameOver());
     }
 
     @Test
-    public void breakoutStateRemoveBallWorks()
+    public void breakoutStateRemoveBallRemovesBallFromList()
     {
-        var state = defaultState();
-        var ball = makeBall(state);
+        var state = freshState();
+        var ball = addCentreBall(state);
         state.removeBall(ball);
         assertFalse(state.getBalls().contains(ball));
     }
@@ -674,37 +707,49 @@ public class BreakoutTest
     @Test
     public void breakoutStateAddBallIncreasesCount()
     {
-        var state = defaultState();
+        var state = freshState();
         assertEquals(0, state.getBalls().size());
-        makeBall(state);
+        addCentreBall(state);
         assertEquals(1, state.getBalls().size());
     }
 
     @Test
     public void breakoutStateGetBallsReturnsCopy()
     {
-        var state = defaultState();
-        makeBall(state);
-        var list1 = state.getBalls();
-        var list2 = state.getBalls();
-        assertNotSame(list1, list2);
+        var state = freshState();
+        addCentreBall(state);
+        assertNotSame(state.getBalls(), state.getBalls());
+    }
+
+    @Test
+    public void breakoutStateGetWallsReturnsCopy()
+    {
+        assertNotSame(freshState().getWalls(), freshState().getWalls());
+    }
+
+    @Test
+    public void breakoutStateHasThreeWalls()
+    {
+        assertEquals(3, freshState().getWalls().size());
     }
 
     // --- StandardBrick ---
 
     @Test
-    public void standardBrickHitRemovesBrick()
+    public void standardBrickHitRemovesBrickFromGrid()
     {
-        var state = defaultState();
-        makeBall(state);
-        var grid = state.getBrickGrid();
+        var state = freshState();
+        var ball = addCentreBall(state);
         var pos = new Point(0, 0);
-        // DEFAULT_MAP has 'o' at (0,0); add a standard brick in a fresh grid
-        var freshState = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var freshBall = makeBall(freshState);
-        var freshBrick = freshState.getBrickGrid().addStandardBrick(new Point(2, 2));
-        freshBrick.hit(freshState, freshBall);
-        assertFalse(freshState.getBrickGrid().containsBrickAt(new Point(2, 2)));
+        var brick = state.getBrickGrid().addStandardBrick(pos);
+        brick.hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+    }
+
+    @Test
+    public void standardBrickIsNotIndestructible()
+    {
+        assertFalse(emptyGrid().addStandardBrick(new Point(0, 0)).isIndestructible());
     }
 
     // --- SpikeyBrick ---
@@ -712,16 +757,14 @@ public class BreakoutTest
     @Test
     public void spikeyBrickIsIndestructible()
     {
-        var grid = new BrickGrid(5, 5, 100, 30);
-        var brick = grid.addSpikeyBrick(new Point(0, 0));
-        assertTrue(brick.isIndestructible());
+        assertTrue(emptyGrid().addSpikeyBrick(new Point(0, 0)).isIndestructible());
     }
 
     @Test
-    public void spikeyBrickHitDecreasesHps()
+    public void spikeyBrickHitDecreasesHpsByOne()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
+        var state = freshState();
+        var ball = addCentreBall(state);
         var brick = state.getBrickGrid().addSpikeyBrick(new Point(0, 0));
         int before = state.getHps();
         brick.hit(state, ball);
@@ -729,10 +772,10 @@ public class BreakoutTest
     }
 
     @Test
-    public void spikeyBrickHitDoesNotRemoveBrick()
+    public void spikeyBrickHitDoesNotRemoveBrickFromGrid()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
+        var state = freshState();
+        var ball = addCentreBall(state);
         var pos = new Point(0, 0);
         state.getBrickGrid().addSpikeyBrick(pos);
         state.getBrickGrid().getBrickAt(pos).hit(state, ball);
@@ -740,12 +783,11 @@ public class BreakoutTest
     }
 
     @Test
-    public void spikeyBrickStrongHitReturnsTrueAndLosesHp()
+    public void spikeyBrickStrongHitReturnsTrueAndDecreasesHp()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
-        var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addSpikeyBrick(pos);
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var brick = state.getBrickGrid().addSpikeyBrick(new Point(0, 0));
         int before = state.getHps();
         boolean survived = brick.strongHit(state, ball);
         assertTrue(survived);
@@ -755,77 +797,132 @@ public class BreakoutTest
     // --- ShrinkPaddleBrick ---
 
     @Test
-    public void shrinkPaddleBrickHitShrinksAndRemovesBrick()
+    public void shrinkPaddleBrickHitShrinksPaddle()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
-        var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addShrinkPaddleBrick(pos);
+        var state = freshState();
+        var ball = addCentreBall(state);
         long widthBefore = state.getPaddle().getWidth();
-        brick.hit(state, ball);
-        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+        state.getBrickGrid().addShrinkPaddleBrick(new Point(0, 0)).hit(state, ball);
         assertTrue(state.getPaddle().getWidth() < widthBefore);
+    }
+
+    @Test
+    public void shrinkPaddleBrickHitRemovesBrickFromGrid()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var pos = new Point(0, 0);
+        state.getBrickGrid().addShrinkPaddleBrick(pos).hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
     }
 
     // --- InvertPaddleBrick ---
 
     @Test
-    public void invertPaddleBrickHitInvertsPaddleAndRemovesBrick()
+    public void invertPaddleBrickHitInvertsPaddle()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
-        var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addInvertPaddleBrick(pos);
+        var state = freshState();
+        var ball = addCentreBall(state);
         assertFalse(state.getPaddle().isInverted());
-        brick.hit(state, ball);
-        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+        state.getBrickGrid().addInvertPaddleBrick(new Point(0, 0)).hit(state, ball);
         assertTrue(state.getPaddle().isInverted());
+    }
+
+    @Test
+    public void invertPaddleBrickHitRemovesBrickFromGrid()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var pos = new Point(0, 0);
+        state.getBrickGrid().addInvertPaddleBrick(pos).hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
     }
 
     // --- BlinkingBallBrick ---
 
     @Test
-    public void blinkingBallBrickHitSetsBehaviorAndRemoves()
+    public void blinkingBallBrickHitGivesBlinkingBehavior()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
-        var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addBlinkingBallBrick(pos);
-        brick.hit(state, ball);
-        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+        var state = freshState();
+        var ball = addCentreBall(state);
+        state.getBrickGrid().addBlinkingBallBrick(new Point(0, 0)).hit(state, ball);
         assertTrue(ball.getBehavior() instanceof BlinkingBallBehavior);
+    }
+
+    @Test
+    public void blinkingBallBrickHitRemovesBrickFromGrid()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var pos = new Point(0, 0);
+        state.getBrickGrid().addBlinkingBallBrick(pos).hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
     }
 
     // --- StrengtheningBrick ---
 
     @Test
-    public void strengtheningBrickHitSetsBehaviorAndRemoves()
+    public void strengtheningBrickHitGivesStrongBehavior()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var ball = makeBall(state);
-        var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addStrengtheningBrick(pos);
-        brick.hit(state, ball);
-        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+        var state = freshState();
+        var ball = addCentreBall(state);
+        state.getBrickGrid().addStrengtheningBrick(new Point(0, 0)).hit(state, ball);
         assertTrue(ball.getBehavior() instanceof StrongBallBehavior);
+    }
+
+    @Test
+    public void strengtheningBrickHitRemovesBrickFromGrid()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var pos = new Point(0, 0);
+        state.getBrickGrid().addStrengtheningBrick(pos).hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
     }
 
     // --- SpeedUpBrick ---
 
     @Test
-    public void speedUpBrickHitSpeedsUpBallAndRemoves()
+    public void speedUpBrickHitRemovesBrickFromGrid()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var centre = state.getBoundingRectangle().getCenter();
-        var ball = state.addBall(new Circle(centre, 5), new Vector(5, 0), new StandardBehavior());
+        var state = freshState();
+        var ball = addCentreBall(state);
         var pos = new Point(0, 0);
-        var brick = state.getBrickGrid().addSpeedUpBrick(pos);
-        long sqBefore = ball.getVelocity().getSquaredLength();
-        brick.hit(state, ball);
+        state.getBrickGrid().addSpeedUpBrick(pos).hit(state, ball);
         assertFalse(state.getBrickGrid().containsBrickAt(pos));
-        // speed should have increased (5*1050/1000 = 5.25 → stays at 5 due to integer math;
-        // but squared: 5*5=25, 5.25*5.25>25 when it applies — test just that it doesn't shrink)
+    }
+
+    @Test
+    public void speedUpBrickHitDoesNotReduceSpeed()
+    {
+        var state = freshState();
+        var centre = state.getBoundingRectangle().getCenter();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(10, 0), new StandardBehavior());
+        long sqBefore = ball.getVelocity().getSquaredLength();
+        state.getBrickGrid().addSpeedUpBrick(new Point(0, 0)).hit(state, ball);
         assertTrue(ball.getVelocity().getSquaredLength() >= sqBefore);
+    }
+
+    // --- SpawnBallBrick ---
+
+    @Test
+    public void spawnBallBrickHitRemovesBrickFromGrid()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        var pos = new Point(0, 0);
+        state.getBrickGrid().addSpawnBallBrick(pos).hit(state, ball);
+        assertFalse(state.getBrickGrid().containsBrickAt(pos));
+    }
+
+    @Test
+    public void spawnBallBrickHitAddsOneNewBall()
+    {
+        var state = freshState();
+        var ball = addCentreBall(state);
+        int before = state.getBalls().size();
+        state.getBrickGrid().addSpawnBallBrick(new Point(0, 0)).hit(state, ball);
+        assertEquals(before + 1, state.getBalls().size());
     }
 
     // --- TemporaryBehavior ---
@@ -833,41 +930,105 @@ public class BreakoutTest
     @Test
     public void temporaryBehaviorTimeLeftDecreases()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
+        var state = freshState();
         var centre = state.getBoundingRectangle().getCenter();
         var behavior = new StrongBallBehavior();
-        var ball = state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
+        state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
         int before = behavior.getTimeLeft();
-        // tick a small amount so no boundary collisions occur
-        behavior.update(state, ball, 10);
+        behavior.update(state, state.getBalls().get(0), 10);
         assertTrue(behavior.getTimeLeft() <= before);
     }
 
     @Test
-    public void temporaryBehaviorRevertAfterExpiry()
+    public void temporaryBehaviorRevertsToStandardAfterExpiry()
     {
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
+        var state = freshState();
         var centre = state.getBoundingRectangle().getCenter();
         var behavior = new StrongBallBehavior();
         var ball = state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
-        // update more than the duration
         behavior.update(state, ball, StrongBallBehavior.DURATION + 1);
-        // ball should no longer have StrongBallBehavior
         assertFalse(ball.getBehavior() instanceof StrongBallBehavior);
         assertTrue(ball.getBehavior() instanceof StandardBehavior);
+    }
+
+    @Test
+    public void temporaryBehaviorTimeLeftNeverNegative()
+    {
+        var state = freshState();
+        var centre = state.getBoundingRectangle().getCenter();
+        var behavior = new StrongBallBehavior();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
+        behavior.update(state, ball, StrongBallBehavior.DURATION + 9999);
+        assertEquals(0, behavior.getTimeLeft());
+    }
+
+    // --- BlinkingBallBehavior ---
+
+    @Test
+    public void blinkingBallBehaviorStartsNormalInvisible()
+    {
+        // At spawn: activeSince = DURATION - DURATION = 0; aux = (0/900)%2 = 0 → NORMAL_INV
+        assertFalse(new BlinkingBallBehavior().isWeakVisible());
+    }
+
+    @Test
+    public void blinkingBallBehaviorBecomesWeakVisibleAfterFirstBlink()
+    {
+        // After 900ms: activeSince = 900; aux = (900/900)%2 = 1 → WEAK_VIS
+        var state = freshState();
+        var centre = state.getBoundingRectangle().getCenter();
+        var behavior = new BlinkingBallBehavior();
+        var ball = state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
+        behavior.update(state, ball, 900);
+        assertTrue(behavior.isWeakVisible());
     }
 
     // --- Paddle ---
 
     @Test
-    public void paddleConstructorThrowsOnZeroSpeed()
+    public void paddleConstructorThrowsOnNullAllowedInterval()
     {
         assertThrows(IllegalArgumentException.class,
-                () -> new Paddle(new Interval(0, 1000), new Point(500, 0), 100, 0));
+                () -> new Paddle(null, new Point(500, 0), 100, 10));
     }
 
     @Test
-    public void paddleScaleShrinks()
+    public void paddleConstructorThrowsOnNullTopCenter()
+    {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Paddle(new Interval(0, 1000), null, 100, 10));
+    }
+
+    @Test
+    public void paddleConstructorThrowsOnZeroHalfWidth()
+    {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Paddle(new Interval(0, 1000), new Point(500, 0), 0, 10));
+    }
+
+    @Test
+    public void paddleInitiallyStationary()
+    {
+        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1);
+        assertEquals(PaddleMotionDirection.STATIONARY, paddle.getMotionDirection());
+    }
+
+    @Test
+    public void paddleInitiallyNotInverted()
+    {
+        assertFalse(new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1).isInverted());
+    }
+
+    @Test
+    public void paddleApplyInvertedMakesIsInvertedTrue()
+    {
+        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1);
+        paddle.applyInverted();
+        assertTrue(paddle.isInverted());
+    }
+
+    @Test
+    public void paddleShrinkReducesWidth()
     {
         var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1);
         long before = paddle.getWidth();
@@ -876,45 +1037,48 @@ public class BreakoutTest
     }
 
     @Test
-    public void paddleScaleGrows()
+    public void paddleGrowIncreasesWidth()
     {
-        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1);
+        var paddle = new Paddle(new Interval(0, 100000), new Point(500, 0), 200, 1);
         long before = paddle.getWidth();
         paddle.grow();
         assertTrue(paddle.getWidth() > before);
     }
 
     @Test
-    public void paddleApplyInvertedMakesInverted()
+    public void paddleMoveStaysWithinAllowedInterval()
     {
-        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 200, 1);
-        assertFalse(paddle.isInverted());
-        paddle.applyInverted();
-        assertTrue(paddle.isInverted());
-    }
-
-    // --- BlinkingBallBehavior ---
-
-    @Test
-    public void blinkingBallBehaviorStartsNormalInvisible()
-    {
-        // At time=0 activeSince=DURATION-DURATION=0, aux=(0/900)%2=0 → NORMAL_INV
-        var b = new BlinkingBallBehavior();
-        assertFalse(b.isWeakVisible());
+        var paddle = new Paddle(new Interval(0, 1000), new Point(500, 0), 100, 1);
+        paddle.move(10000); // large distance → clamped
+        assertTrue(paddle.getTopCenter().x() + paddle.getHalfWidth() <= 1000);
     }
 
     @Test
-    public void blinkingBallBehaviorIsWeakVisibleAfterOneBlink()
+    public void paddleSetMotionDirectionUpdatesDirection()
     {
-        // After 900ms elapsed, activeSince=900, aux=(900/900)%2=1 → WEAK_VIS
-        var state = new BreakoutState(new BrickGrid(5, 5, 100, 30), 100, 10, 70);
-        var centre = state.getBoundingRectangle().getCenter();
-        var behavior = new BlinkingBallBehavior();
-        state.addBall(new Circle(centre, 5), new Vector(1, -1), behavior);
-        // Manually reduce timeLeft to simulate time passage
-        // timeLeft starts at 5000; after 900ms elapsed → timeLeft = 4100
-        // activeSince = 5000 - 4100 = 900 → aux = 1 → WEAK_VIS
-        behavior.update(state, state.getBalls().get(0), 900);
-        assertTrue(behavior.isWeakVisible());
+        var paddle = new Paddle(new Interval(0, 1000), new Point(500, 0), 100, 1);
+        paddle.setMotionDirection(PaddleMotionDirection.LEFT);
+        assertEquals(PaddleMotionDirection.LEFT, paddle.getMotionDirection());
+    }
+
+    @Test
+    public void paddleGeometryHasCorrectLeftCoordinate()
+    {
+        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 100, 1);
+        assertEquals(500 - 100, paddle.getGeometry().getLeft());
+    }
+
+    @Test
+    public void paddleGeometryHasCorrectWidth()
+    {
+        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 100, 1);
+        assertEquals(200, paddle.getGeometry().getWidth());
+    }
+
+    @Test
+    public void paddleGeometryHasCorrectHeight()
+    {
+        var paddle = new Paddle(new Interval(0, 10000), new Point(500, 0), 100, 1);
+        assertEquals(Paddle.HEIGHT, paddle.getGeometry().getHeight());
     }
 }
