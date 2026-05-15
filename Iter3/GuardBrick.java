@@ -13,53 +13,67 @@ import ogp.math.Vector;
 import ogp.util.SpecUtil;
 
 /**
- * A brick "guarding" some EvilBrick's
- * 
+ * A brick "guarding" some EvilBrick's.
+ *
+ * Package representation invariant:
  * @invar | evilBricks != null
  * @invar | evilBricks.stream().allMatch(e -> e != null && e.guardBricks.contains(this))
  * @invar | !SpecUtil.containsDuplicateObjects(evilBricks)
  * @invar | hps == computeHpsPkg()
- * 
+ *
+ * Public (abstract) invariant:
+ * @invar | getEvilBricks() != null
+ * @invar | getEvilBricks().stream().allMatch(e -> e != null && e.getGuardBricks().contains(this))
+ * @invar | getHps() >= 1
+ * @invar | getHps() == 1 + getEvilBricks().stream().mapToInt(e -> e.getEvilBalls().size()).sum()
  */
 public class GuardBrick extends LabeledBrick {
-	
+
 	/**
 	 * @representationObject
 	 * @peerObjects
 	 */
-	ArrayList<EvilBrick> evilBricks;
-	
+	public ArrayList<EvilBrick> evilBricks;
+
 	/**
 	 * see computeHpsPkg()
 	 */
 	int hps;
-	
+
 	/**
-	 * Returns the evil bricks that this guard brick protects.
-	 * 
+	 * Returns the list of evil bricks that this guard brick is linked to.
+	 *
 	 * @creates | result
 	 * @post | result != null
 	 * @post | result.stream().allMatch(e -> e != null)
 	 * @post | result.stream().allMatch(e -> e.getGuardBricks().contains(this))
 	 */
 	public ArrayList<EvilBrick> getEvilBricks() {
-		return new ArrayList<>(evilBricks);
+	    return new ArrayList<>(evilBricks);
 	}
-	
+
 	/**
+	 * Returns the health points of this guard brick.
+	 * Equals 1 + the total number of evil balls across all linked evil bricks.
+	 *
 	 * LEGIT
+	 *
+	 * @post | result >= 1
+	 * @post | result == 1 + getEvilBricks().stream().mapToInt(e -> e.getEvilBalls().size()).sum()
 	 */
 	public int getHps() {
 		return hps;
 	}
-	
+
 	/**
 	 * Registers a link between this guard brick and ebrick.
 	 * Linking twice has no additional effect.
-	 * 
+	 *
 	 * @pre | ebrick != null
 	 * @post | getEvilBricks().contains(ebrick)
 	 * @post | ebrick.getGuardBricks().contains(this)
+	 * @post | getHps() == 1 + getEvilBricks().stream().mapToInt(e -> e.getEvilBalls().size()).sum()
+	 * @post | ebrick.getEvilBalls().stream().allMatch(b -> b.getSpeedModifier() == b.computeSpeedModifierPkg())
 	 * @mutates | this
 	 * @mutates | ebrick
 	 */
@@ -83,15 +97,25 @@ public class GuardBrick extends LabeledBrick {
 			}
 		}
 	}
-	
+
+
 	/**
+	 * Deletes the link between this guard brick and ebrick, if any.
+	 * Fails silently if no such link exists.
+	 *
 	 * LEGIT
-	 * fails silently if ebrick is not found
+	 *
+	 * @pre | ebrick != null
+	 * @post | !getEvilBricks().contains(ebrick)
+	 * @post | !ebrick.getGuardBricks().contains(this)
+	 * @post | getHps() == 1 + getEvilBricks().stream().mapToInt(e -> e.getEvilBalls().size()).sum()
+	 * @mutates | this
+	 * @mutates | ebrick
 	 */
 	public void unlink(EvilBrick ebrick) {
 		unlinkPkg(ebrick);
 	}
-	
+
 	/**
 	 * NOSPEC
 	 * post: the result is 1 + Sum[ebr : getEvilBricks()] |ebr.getEvilBalls()|
@@ -128,33 +152,34 @@ public class GuardBrick extends LabeledBrick {
 		}
 		return sum;
 	}
-	
-	
-	
-	
-	
-	
-	
+
+
 	//------------integration in Breakout-----------------
 
 	/**
 	 * Removes this brick reference from any peer.
-	 * The invariant is preserved after execution. 
+	 * The invariant is preserved after execution.
 	 * post: getEvilBricks() is empty
-	 * 
 	 */
 	void nukePkg() {
 		var temp = new ArrayList<EvilBrick>(evilBricks);
-		for (var ebrick : temp) { 
+		for (var ebrick : temp) {
 			unlinkPkg(ebrick);
 		}
 	}
 
+	/**
+	 * @post | result != null
+	 */
 	@Override
 	public Color getColor() {
 		return ColorSet.EXTRA2;
 	}
 
+	/**
+	 * @post | result != null
+	 * @post | result.equals("G" + getHps())
+	 */
 	@Override
 	public String getLabel() {
 		return "G" + hps;
@@ -162,16 +187,16 @@ public class GuardBrick extends LabeledBrick {
 
 	/**
 	 * Constructs a GuardBrick with an empty set of linked evil bricks.
-	 * 
+	 *
 	 * @throws IllegalArgumentException | geometry == null
 	 * @throws IllegalArgumentException | gridPosition == null
 	 * @post | getEvilBricks().isEmpty()
 	 * @post | getHps() == 1
 	 */
 	public GuardBrick(Rectangle geometry, Point gridPosition) {
-		super(geometry, gridPosition);
-		evilBricks = new ArrayList<>();
-		hps = 1;
+	    super(geometry, gridPosition);
+	    evilBricks = new ArrayList<>();
+	    hps = 1;
 	}
 
 	/**
@@ -187,25 +212,21 @@ public class GuardBrick extends LabeledBrick {
 
 	/**
 	 * When hit:
-	 * - if hps > 1, nothing special happens (brick survives via strongHit returning true).
-	 * - if hps == 1, for each linked evil brick, spawns 1 evil ball; then destroys this guard brick.
-	 * 
+	 * - if hps > 1, nothing special happens (brick is not destroyed).
+	 * - if hps == 1, for each linked evil brick, spawns 1 evil ball linked to that evil brick;
+	 *   then destroys this guard brick and removes it from all associations.
+	 *
 	 * @pre | state != null
 	 * @pre | ball != null
 	 * @pre | state.getBalls().contains(ball)
+	 * @post | old(getHps()) > 1 || state.getBrickGrid().getBrickAt(getGridPosition()) == null
+	 * @mutates | state
+	 * @mutates | ball
 	 */
 	@Override
 	public void hit(BreakoutState state, Ball ball) {
-		if (hps > 1) {
-			// decrement hps by removing one evil ball link conceptually; 
-			// but per assignment: if >1 hp nothing special happens (brick survives)
-			// hps is maintained by the invariant; we need to reduce it.
-			// The assignment says "nothing special happens" meaning brick stays alive.
-			// But we need to reduce hps somehow? 
-			// Re-reading: hps = 1 + sum|ebr.evilBalls|. It's computed, not decremented.
-			// So "if hps > 1, nothing special happens" means brick just stays.
-			return;
-		} else {
+		if (hps > 1) return;
+		else {
 			// hps == 1: spawn evil balls and destroy this guard brick
 			ArrayList<EvilBrick> temp = new ArrayList<>(evilBricks);
 			for (int i = 0; i < temp.size(); i++) {
@@ -218,7 +239,7 @@ public class GuardBrick extends LabeledBrick {
 			state.getBrickGrid().removeBrick(this);
 		}
 	}
-	
+
 	/**
 	 * LEGIT
 	 */
@@ -227,7 +248,7 @@ public class GuardBrick extends LabeledBrick {
 		hit(state , ball);
 		return true;
 	}
-	
-	
-	
+
+
+
 }
