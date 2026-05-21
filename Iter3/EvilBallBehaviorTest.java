@@ -298,4 +298,194 @@ public class EvilBallBehaviorTest {
         assertEquals(1, eb1.getEvilBalls().size());
         assertTrue(eb1.getEvilBalls().contains(b2));
     }
+
+    // ---- getColor ----
+
+    @Test
+    void getColorReturnsExtra1Constant() {
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(EvilBallBehavior.COLOR, b.getColor());
+    }
+
+    @Test
+    void colorConstantIsBlueViolet() {
+        assertEquals(new java.awt.Color(138, 43, 226), EvilBallBehavior.COLOR);
+    }
+
+    // ---- mkEball static factory ----
+
+    @Test
+    void mkEballCreatesLinkedBall() {
+        var b = EvilBallBehavior.mkEball(eb1);
+        assertNotNull(b);
+        assertEquals(eb1, b.getOwner());
+    }
+
+    @Test
+    void mkEballAddsToEvilBrickList() {
+        EvilBallBehavior.mkEball(eb1);
+        assertEquals(1, eb1.getEvilBalls().size());
+    }
+
+    @Test
+    void mkEballWithNullThrows() {
+        assertThrows(IllegalArgumentException.class, () -> EvilBallBehavior.mkEball(null));
+    }
+
+    // ---- speedModifier = 0 edge cases ----
+
+    @Test
+    void speedModifierZeroForNoGuards() {
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(0, b.getSpeedModifier());
+    }
+
+    @Test
+    void speedModifierZeroAfterUnlink() {
+        g1.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        b.unlink();
+        assertEquals(0, b.getSpeedModifier());
+    }
+
+    // ---- speedModifier clamped to -3 ----
+
+    /**
+     * 3 guards each linked to eb1, eb2, eb3.
+     * For ball on eb1: numGuards=3, µ=max(3,3,3)=3, 3<3 false → sign=-1, raw=-3, clamp=-3.
+     */
+    @Test
+    void speedModifierClampedToMinusThreeWhenMuEqualsNumGuards() {
+        g1.link(eb1); g1.link(eb2); g1.link(eb3);
+        g2.link(eb1); g2.link(eb2); g2.link(eb3);
+        g3.link(eb1); g3.link(eb2); g3.link(eb3);
+
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(-3, b.getSpeedModifier());
+    }
+
+    /**
+     * 4 guards each linked to eb1,eb2,eb3,eb4.
+     * numGuards=4, µ=4, 4<4 false → sign=-1, raw=-4, clamp=-3.
+     */
+    @Test
+    void speedModifierClampedToMinusThreeWhenMuFour() {
+        EvilBrick eb3local = new EvilBrick();
+        EvilBrick eb4local = new EvilBrick();
+        g1.link(eb1); g1.link(eb2); g1.link(eb3local); g1.link(eb4local);
+        g2.link(eb1); g2.link(eb2); g2.link(eb3local); g2.link(eb4local);
+        g3.link(eb1); g3.link(eb2); g3.link(eb3local); g3.link(eb4local);
+        g4.link(eb1); g4.link(eb2); g4.link(eb3local); g4.link(eb4local);
+
+        var b = new EvilBallBehavior(eb1);
+        // numGuards=4, µ=4, 4<4 false → sign=-1, raw=-4, clamp=-3
+        assertEquals(-3, b.getSpeedModifier());
+    }
+
+    // ---- speedModifier clamped to +3 ----
+
+    /**
+     * 4 guards each only linked to eb1.
+     * numGuards=4, µ=max(1,1,1,1)=1, 1<4 true → sign=1, raw=4, clamp=3.
+     */
+    @Test
+    void speedModifierClampedToThreeWithFourGuardsOneEvilBrick() {
+        g1.link(eb1);
+        g2.link(eb1);
+        g3.link(eb1);
+        g4.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(3, b.getSpeedModifier());
+    }
+
+    // ---- bounceOffWall with speedModifier = 0 ----
+
+    @Test
+    void bounceOffWallWithModifierZeroDoesNotChangeSpeed() {
+        // No guards → speedModifier = 0
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(0, b.getSpeedModifier());
+
+        var state = makeState();
+        var gameBall = addBall(state);
+        long speedBefore = gameBall.getVelocity().getSquaredLength();
+
+        b.bounceOffWall(state, gameBall, new Collision(0, Vector.KILO_RIGHT));
+
+        assertEquals(speedBefore, gameBall.getVelocity().getSquaredLength());
+    }
+
+    // ---- bounceOffWall with speedModifier = +3 ----
+
+    @Test
+    void bounceOffWallWithModifierThreeIncreasesSpeed() {
+        g1.link(eb1); g2.link(eb1); g3.link(eb1); g4.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(3, b.getSpeedModifier());
+
+        var state = makeState();
+        var gameBall = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(10, -10),
+            new StandardBehavior()
+        );
+        long speedBefore = gameBall.getVelocity().getSquaredLength();
+
+        b.bounceOffWall(state, gameBall, new Collision(0, Vector.KILO_RIGHT));
+
+        assertTrue(gameBall.getVelocity().getSquaredLength() >= speedBefore);
+    }
+
+    // ---- ballLost decreases guard hps ----
+
+    @Test
+    void ballLostDecreasesGuardBrickHps() {
+        g1.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        int hpsBefore = g1.getHps(); // 2
+
+        var state = makeState();
+        var gameBall = addBall(state);
+        gameBall.setBehavior(b);
+        b.ballLost(state, gameBall);
+
+        assertEquals(hpsBefore - 1, g1.getHps());
+    }
+
+    @Test
+    void ballLostRemovesBallFromEvilBrickList() {
+        var b = new EvilBallBehavior(eb1);
+
+        var state = makeState();
+        var gameBall = addBall(state);
+        gameBall.setBehavior(b);
+        b.ballLost(state, gameBall);
+
+        assertFalse(eb1.getEvilBalls().contains(b));
+    }
+
+    // ---- speedModifier updates dynamically ----
+
+    @Test
+    void speedModifierUpdatesWhenSecondGuardLinked() {
+        g1.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        // 1 guard, µ=1, 1<1 false → -1
+        assertEquals(-1, b.getSpeedModifier());
+
+        g2.link(eb1);
+        // 2 guards, µ=1, 1<2 true → +2
+        assertEquals(2, b.getSpeedModifier());
+    }
+
+    @Test
+    void speedModifierUpdatesWhenGuardUnlinked() {
+        g1.link(eb1); g2.link(eb1);
+        var b = new EvilBallBehavior(eb1);
+        assertEquals(2, b.getSpeedModifier());
+
+        g2.unlink(eb1);
+        // back to 1 guard, µ=1, 1<1 false → -1
+        assertEquals(-1, b.getSpeedModifier());
+    }
 }

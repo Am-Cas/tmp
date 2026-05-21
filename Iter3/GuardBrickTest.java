@@ -280,4 +280,185 @@ public class GuardBrickTest {
 
         assertFalse(eb.getGuardBricks().contains(g));
     }
+
+    // ---- getColor ----
+
+    @Test
+    void getColorReturnsExtra2() {
+        assertEquals(new java.awt.Color(0, 191, 255), g1.getColor());
+    }
+
+    // ---- getLabel ----
+
+    @Test
+    void getLabelWithHpsOneReturnsG1() {
+        assertEquals("G1", g1.getLabel());
+    }
+
+    @Test
+    void getLabelUpdatesWhenHpsIncreases() {
+        g1.link(eb1);
+        new EvilBallBehavior(eb1); // hps = 2
+        assertEquals("G2", g1.getLabel());
+    }
+
+    @Test
+    void getLabelReflectsThreeEvilBalls() {
+        g1.link(eb1);
+        new EvilBallBehavior(eb1);
+        new EvilBallBehavior(eb1);
+        new EvilBallBehavior(eb1); // hps = 4
+        assertEquals("G4", g1.getLabel());
+    }
+
+    // ---- computeHps ----
+
+    @Test
+    void computeHpsEqualsGetHpsWhenEmpty() {
+        assertEquals(g1.getHps(), g1.computeHps());
+    }
+
+    @Test
+    void computeHpsEqualsGetHpsWithLinks() {
+        g1.link(eb1);
+        g1.link(eb2);
+        new EvilBallBehavior(eb1);
+        new EvilBallBehavior(eb2);
+        assertEquals(g1.getHps(), g1.computeHps());
+    }
+
+    @Test
+    void computeHpsBaselineIsOne() {
+        assertEquals(1, g1.computeHps());
+    }
+
+    @Test
+    void computeHpsSumsEvilBallsAcrossAllLinkedEvilBricks() {
+        g1.link(eb1);
+        g1.link(eb2);
+        new EvilBallBehavior(eb1);
+        new EvilBallBehavior(eb2);
+        new EvilBallBehavior(eb2);
+        // hps = 1 + 1 + 2 = 4
+        assertEquals(4, g1.computeHps());
+    }
+
+    // ---- strongHit ----
+
+    @Test
+    void strongHitAlwaysReturnsTrue() {
+        var grid = new BrickGrid(7, 7, 10000, 3000);
+        var gPos = new Point(0, 0);
+        var g = grid.addGuardBrick(gPos);
+
+        var state = new BreakoutState(grid, 1000, 100, 70);
+        var ball = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(0, -33),
+            new StandardBehavior()
+        );
+
+        assertTrue(g.strongHit(state, ball));
+    }
+
+    @Test
+    void strongHitDestroysGuardWhenHpsIsOne() {
+        var grid = new BrickGrid(7, 7, 10000, 3000);
+        var gPos = new Point(0, 0);
+        var g = grid.addGuardBrick(gPos);
+
+        var state = new BreakoutState(grid, 1000, 100, 70);
+        var ball = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(0, -33),
+            new StandardBehavior()
+        );
+
+        g.strongHit(state, ball);
+        assertNull(grid.getBrickAt(gPos));
+    }
+
+    // ---- hit: hps > 1 no-op ----
+
+    @Test
+    void hitWithHpsAbove1DoesNotSpawnBalls() {
+        var grid = new BrickGrid(7, 7, 10000, 3000);
+        var gPos = new Point(0, 0);
+        var ePos = new Point(1, 0);
+        var g = grid.addGuardBrick(gPos);
+        var eb = grid.addEvilBrick(ePos, new ArrayList<>());
+        g.link(eb);
+        new EvilBallBehavior(eb); // hps = 2
+
+        var state = new BreakoutState(grid, 1000, 100, 70);
+        var ball = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(0, -33),
+            new StandardBehavior()
+        );
+
+        int before = state.getBalls().size();
+        g.hit(state, ball);
+        assertEquals(before, state.getBalls().size());
+    }
+
+    @Test
+    void hitWithHpsAbove1GuardRemainsInGrid() {
+        var grid = new BrickGrid(7, 7, 10000, 3000);
+        var gPos = new Point(0, 0);
+        var ePos = new Point(1, 0);
+        var g = grid.addGuardBrick(gPos);
+        var eb = grid.addEvilBrick(ePos, new ArrayList<>());
+        g.link(eb);
+        new EvilBallBehavior(eb); // hps = 2
+
+        var state = new BreakoutState(grid, 1000, 100, 70);
+        var ball = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(0, -33),
+            new StandardBehavior()
+        );
+
+        g.hit(state, ball);
+        assertNotNull(grid.getBrickAt(gPos));
+    }
+
+    // ---- hit: hps == 1, three linked evil bricks ----
+
+    @Test
+    void hitWithHps1SpawnsThreeBallsForThreeLinkedEvilBricks() {
+        var grid = new BrickGrid(7, 7, 10000, 3000);
+        var gPos  = new Point(0, 0);
+        var ePos1 = new Point(1, 0);
+        var ePos2 = new Point(2, 0);
+        var ePos3 = new Point(3, 0);
+
+        var g   = grid.addGuardBrick(gPos);
+        var eb1b = grid.addEvilBrick(ePos1, new ArrayList<>());
+        var eb2b = grid.addEvilBrick(ePos2, new ArrayList<>());
+        var eb3b = grid.addEvilBrick(ePos3, new ArrayList<>());
+        g.link(eb1b);
+        g.link(eb2b);
+        g.link(eb3b);
+
+        var state = new BreakoutState(grid, 1000, 100, 70);
+        var ball = state.addBall(
+            new Circle(new Point(35000, 15000), 500),
+            new Vector(0, -33),
+            new StandardBehavior()
+        );
+
+        int before = state.getBalls().size();
+        g.hit(state, ball);
+        assertEquals(before + 3, state.getBalls().size());
+    }
+
+    // ---- idempotent link does not change hps ----
+
+    @Test
+    void linkingTwiceDoesNotIncreaseHps() {
+        g1.link(eb1);
+        g1.link(eb1); // no-op
+        assertEquals(1, g1.getHps());
+    }
 }
